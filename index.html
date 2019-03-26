@@ -461,12 +461,14 @@
                 else {
                     // if what they collided with was a chocolate bar then reduce their health by 25 (change to your liking) and remove the object from the stage and the linked list
                     if (currentObject.type == "Chocolate Bar") {
+                        document.getElementById("chocolate").play();
                         drainHealth(25);
                         stage.removeChild(currentObject.element);
                         obtainables.removeFrom(x);
                     }
                     // if what they collided with was an energy drink then add 50 to their stamina (change that to your liking) and remove the object from the stage and the linked list
                     else if (currentObject.type == "Energy Drink") {
+                        document.getElementById("powerup").play();
                         modifyStamina(50);
                         stage.removeChild(currentObject.element);
                         obtainables.removeFrom(x);
@@ -577,6 +579,7 @@
             // When keycode 16 (Shift) is pressed and levelNo is 2 or 3 (swap gravity mechanic enabled)
             // rotate the player based on rotation defined above and correct the players position
             else if (e.keyCode == "16" && (levelNo == 2 || levelNo == 3) && jumping == false) {
+                document.getElementById("antigravity").play();
                 if (capacitor <= 0) modifyStamina(-20);
 
                 jumping = true;
@@ -593,6 +596,9 @@
 </head>
 <body onload="init();">
     <audio id="jump" preload="auto" type="audio/wav" src="Sounds/Jump_01.wav"></audio>
+    <audio id ="chocolate" preload="auto" type="audio/wav" srs="Sounds/Error.wav"></audio>
+    <audio id ="powerup" preload="auto" type="audio/wav" srs="Sounds/Powerup.wav"></audio>
+    <audio id ="antigravity" preload="auto" type="audio/wav" srs="Sounds/Swoosh.wav"></audio>
     <canvas id="demoCanvas"></canvas>
 </body>
 
