@@ -1,0 +1,687 @@
+<html>
+<head>
+    <script src="https://code.createjs.com/1.0.0/createjs.min.js"></script>
+    <script src="https://code.createjs.com/easeljs-0.8.2.min.js"></script>
+    <script src="https://code.createjs.com/soundjs-0.6.2.min.js"></script>
+    <script>
+        class Node {
+            // Constructor for node class. Take element (shape), type (Walkable Platform, Energy Drink etc..),
+            // xCoord that stays static (used for hitboxes), yCoord that stays static (used for hitboxes), width, height
+            constructor(element, type, xCoord, yCoord, Width, Height) {
+                this.element = element;
+                this.type = type;
+                this.xCoord = xCoord;
+                this.yCoord = yCoord;
+                this.Width = Width;
+                this.Height = Height;
+                this.next = null
+            }
+        }
+
+        class LinkedList {
+            // Constructor for linkedlist. assigns head and size to defaults
+            constructor() {
+                this.head = null;
+                this.size = 0;
+            }
+
+            // This function adds an object to the linkedlist using the node class and reformats the linked list to have
+            // an appropriate size, head pointer, and next pointers
+            add(element, type, xCoord, yCoord, Width, Height) {
+                // creates a new node
+                var node = new Node(element, type, xCoord, yCoord, Width, Height);
+
+                // to store current node
+                var current;
+
+                // if list is Empty add the
+                // element and make it head
+                if (this.head == null) this.head = node;
+                else {
+                    current = this.head;
+
+                    // iterate to the end of the
+                    // list
+                    while (current.next) current = current.next;
+                    // add node
+                    current.next = node;
+                }
+                this.size++;
+            }
+
+            // This function returns an object at a specified index but does not remove it from the list. Used for hitboxes
+            returnFrom(index) {
+                var curr, prev, it = 0;
+                curr = this.head;
+                prev = curr;
+
+                // iterate over the list to the
+                // position to removce an element
+                while (it < index) {
+                    it++;
+                    prev = curr;
+                    curr = curr.next;
+                }
+                return curr;
+            }
+
+            // This function is like the returnFrom function except it removes the object instead of returning it to be used. Used
+            // to improve performance after items have been collected or platforms have moved offscreen.
+            removeFrom(index) {
+                if (index > 0 && index > this.size) return -1;
+                else {
+                    var curr, prev, it = 0;
+                    curr = this.head;
+                    prev = curr;
+
+                    // deleting first element
+                    if (index === 0) {
+                        this.head = curr.next;
+                    } else {
+                        // iterate over the list to the
+                        // position to removce an element
+                        while (it < index) {
+                            it++;
+                            prev = curr;
+                            curr = curr.next;
+                        }
+
+                        // remove the element
+                        prev.next = curr.next;
+                    }
+                    this.size--;
+
+                    // return the remove element
+                    return curr;
+                }
+            }
+
+            // This function returns 0 if the linkedlist is empty
+            isEmpty() {
+                return this.size == 0;
+            }
+
+            // finds the index of element
+            indexOf(element) {
+                var count = 0;
+                var current = this.head;
+
+                // iterate over the list
+                while (current != null) {
+                    // compare each element of the list
+                    // with given element
+                    if (current.element === element) return count;
+                    count++;
+                    current = current.next;
+                }
+
+                // not found
+                return -1;
+            }
+        }
+
+        var stage;
+        var levelNo = 1;
+        var platforms = new LinkedList(), obtainables = new LinkedList(), objectSpeed = 1;
+        var character, noOfJumps = 2, animSpeed = 0.07;
+        var onPlatform = false, jumping = false, switchedGravity = false;
+        var backgroundBitmap = new createjs.Bitmap("Background Images/Menu-1.png");
+        var gravityInterval, staminaInterval, capacitorInterval, gameInterval;
+        var staminaText = new createjs.Text(), healthText = new createjs.Text(), capacitorText = new createjs.Text();
+        var stats = new createjs.Container();
+        const platformType = {
+            REGULAR: 'regular',
+            DEATH: 'death',
+            END: 'end',
+        }
+        const obtainableType = {
+            CHOCOBAR: 'chocobar',
+            ENERGYDRINK: 'energydrink',
+            CAPACITOR: 'capacitor',
+        }
+
+        // Initializes the game on first launch
+        function init() {
+            // set canvas width and height based on users screen
+            var height = window.innerHeight - 20;
+            var width = window.innerWidth - 20;
+            var canvas = document.getElementById("demoCanvas");
+            canvas.setAttribute("width", width);
+            canvas.setAttribute("height", height);
+
+            // even listener for keyboard input
+            window.addEventListener("keydown", keyboardInput, false);
+
+            // create stage
+            stage = new createjs.Stage("demoCanvas");
+
+            // load menu
+            menu();
+
+            // set ticker
+            createjs.Ticker.setFPS(60);
+            createjs.Ticker.addEventListener("tick", stage);
+        }
+
+        // This function initializes the text (health, stamina, and capacitor charge) and adds it to a container
+        function initializeStats() {
+            // Init stamina
+            staminaText.font = "20px Arial";
+            staminaText.color = "Green";
+            staminaText.x = 200;
+            staminaText.y = 10;
+
+            // Init health
+            healthText.font = "20px Arial";
+            healthText.color = "Red";
+            healthText.x = 10;
+            healthText.y = 10;
+
+            // Init capacitor charge
+            capacitorText.font = "20px Arial";
+            capacitorText.color = "Yellow";
+            capacitorText.x = 410;
+            capacitorText.y = 10;
+
+            // add to stats container
+            stats.addChild(healthText, staminaText, capacitorText);
+        }
+
+        function overlay(type) {
+            // declare local variables
+            var overlayBtn = document.createElement("button");
+            var overlayText = new createjs.Text();
+
+            // find x and y location for objects
+            var x = (window.innerWidth / 2) - 130;
+            var y = (window.innerHeight / 2) - 50;
+
+            // clear all intervals
+            clearInterval(gameInterval);
+            clearInterval(gravityInterval);
+            clearInterval(staminaInterval);
+            clearInterval(capacitorInterval);
+            document.getElementById('mainGame').pause();
+            document.getElementById('mainGame').currentTime = 0;
+
+            // set text, color, and content of button depending on type
+            if (type == "Game Over") {
+                document.getElementById('death').play();
+                overlayText.x = x - 90;
+                overlayText.text = "Game Over";
+                overlayText.color = "Red";
+                overlayBtn.textContent = "Try Again";
+            }
+            else if (type == "Level Complete") {
+                document.getElementById('win').play();
+                overlayText.x = x - 140;
+                overlayText.text = "Level Complete";
+                overlayText.color = "Green";
+                overlayBtn.textContent = "Next Level";
+                levelNo++;
+            }
+
+            // set overlayText properties
+            overlayText.font = "70px Arial";
+            overlayText.y = y - 100;
+
+            // when button clicked, load level
+            overlayBtn.onclick = function ()
+            {
+                document.getElementById('death').pause();
+                document.getElementById('death').currentTime = 0;
+                document.getElementById('win').pause();
+                document.getElementById('win').currentTime = 0;
+                document.body.removeChild(overlayBtn);
+                stage.removeChild(overlayText);
+                loadLevel()
+            };
+
+            // set button properties
+            overlayBtn.style.position = "absolute";
+            overlayBtn.style.left = x + 'px';
+            overlayBtn.style.top = y + 'px';
+            overlayBtn.style.height = 100;
+            overlayBtn.style.width = 200;
+            overlayBtn.style.fontSize = "40px";
+
+            // add to stage
+            stage.addChild(overlayText);
+            document.body.appendChild(overlayBtn);
+        }
+
+        function menu() {
+            // find x and y location for objects
+            var x = (window.innerWidth / 2) - 130;
+            var y = (window.innerHeight / 2) - 50;
+
+            // local variables
+            var playGameBtn = document.createElement("button");
+            var howToPlayBtn = document.createElement("button");
+            var backBtn = document.createElement("button");
+            var howToPlayText = new createjs.Text();
+
+            // declare how to play text properties
+            howToPlayText.text = "Press SPACE to jump, Press CTRL to change speed, Press SHIFT to swap gravity (Level 2)\n                                              You can double jump in level 3";
+            howToPlayText.color = "White";
+            howToPlayText.font = "30px Arial";
+            howToPlayText.x = x - 500;
+            howToPlayText.y = y;
+
+            // declare play game button properties
+            playGameBtn.textContent = "Play";
+            playGameBtn.style.position = "absolute";
+            playGameBtn.style.left = x;
+            playGameBtn.style.top = y;
+            playGameBtn.style.height = 100;
+            playGameBtn.style.width = 200;
+            playGameBtn.style.fontSize = "40px";
+
+            // declare how to play button properties
+            howToPlayBtn.textContent = "How To Play";
+            howToPlayBtn.style.position = "absolute";
+            howToPlayBtn.style.left = x;
+            howToPlayBtn.style.top = y + 200;
+            howToPlayBtn.style.height = 100;
+            howToPlayBtn.style.width = 200;
+            howToPlayBtn.style.fontSize = "40px";
+
+            // declare back button properties
+            backBtn.textContent = "Go Back";
+            backBtn.style.position = "absolute";
+            backBtn.style.left = x;
+            backBtn.style.top = y + 100;
+            backBtn.style.height = 100;
+            backBtn.style.width = 200;
+            backBtn.style.fontSize = "40px";
+
+            // once play game clicked, start the game
+            playGameBtn.onclick = function () {
+                document.body.removeChild(playGameBtn);
+                document.body.removeChild(howToPlayBtn);
+                stage.removeChild(backgroundBitmap);
+                loadCharacter()
+                initializeStats();
+                loadLevel();
+            };
+
+            // once how to play clicked, show how to play screen
+            howToPlayBtn.onclick = function () {
+                document.body.removeChild(playGameBtn);
+                document.body.removeChild(howToPlayBtn);
+                stage.addChild(howToPlayText);
+                document.body.appendChild(backBtn);
+            };
+
+            // once back button clicked, go back to main menu screen
+            backBtn.onclick = function () {
+                document.body.appendChild(playGameBtn);
+                document.body.appendChild(howToPlayBtn);
+                stage.removeChild(howToPlayText);
+                document.body.removeChild(backBtn);
+            };
+
+            // add objects to stage
+            stage.addChild(backgroundBitmap);
+            document.body.appendChild(playGameBtn);
+            document.body.appendChild(howToPlayBtn);
+        }
+
+        // This function loads the character from a spritesheet then assigns, and executes a run animation
+        function loadCharacter() {
+            character = new createjs.Sprite(new createjs.SpriteSheet({
+                // declare where to find spritesheet
+                "images": ["Character Images/Spritesheet.png"],
+                // assign 4 frames from spritesheet
+                "frames": [
+                    [1, 1, 21, 31, 0, -5, -1],
+                    [24, 1, 21, 31, 0, -5, -1],
+                    [47, 1, 17, 31, 0, -6, -1],
+                    [66, 1, 17, 31, 0, -6, -1]
+                ],
+                // assign animation "run" from frame indeces 0, 2, 1, 3
+                "animations": {
+                    "run": {
+                        frames: [0, 2, 1, 3],
+                        next: "run",
+                        speed: animSpeed
+                    }
+                }
+            }), "run");
+        }
+
+        // This function loads the level eiter from initialization or when killed and respawned
+        function loadLevel() {
+            // remove all shapes and obtainables currently in level linked list
+            while (platforms.isEmpty() == false) platforms.removeFrom(0);
+            while (obtainables.isEmpty() == false) obtainables.removeFrom(0);
+
+            // reset stat and overlay variables
+            stage.removeChild(stats);
+            health = 100;
+            capacitor = 0;
+            
+            // reset player variables
+            onPlatform = false;
+            switchedGravity = false;
+            character.rotation = 0;
+
+            // reset all intervals required for level to run
+            clearInterval(capacitorInterval);
+            clearInterval(gravityInterval);
+            gravityInterval = setInterval(gravity, 1);
+            clearInterval(staminaInterval);
+            staminaInterval = setInterval(modifyStamina, 200, -1);
+
+            // add background bitmap to stage
+            backgroundBitmap = new createjs.Bitmap("Background Images/Background_Final.jpg");
+            stage.addChild(backgroundBitmap);
+
+            // chain for creating levels. Assign objects, and stamina amount
+            if (levelNo == 1) {
+                createPlatform(50, 300, 900, 200, platformType.REGULAR)
+                createPlatform(1050, 400, 250, 60, platformType.REGULAR)
+                createPlatform(1400, 300, 250, 30, platformType.REGULAR);
+                createObtainable(1200, 161, obtainableType.CHOCOBAR);
+                createObtainable(2000, 170, obtainableType.ENERGYDRINK);
+                createPlatform(1800, 200, 350, 30, platformType.REGULAR);
+                createPlatform(2300, 400, 250, 30, platformType.REGULAR);
+                createPlatform(2800, 400, 250, 30, platformType.REGULAR);
+                createObtainable(2950, 381, obtainableType.CAPACITOR);
+                createPlatform(3300, 400, 250, 30, platformType.REGULAR);
+                createPlatform(3700, 300, 250, 30, platformType.REGULAR);
+                createPlatform(4100, 200, 100, 30, platformType.REGULAR);
+                createPlatform(4300, 300, 100, 30, platformType.REGULAR);
+                createPlatform(4500, 400, 250, 30, platformType.REGULAR);
+                createPlatform(5000, 400, 250, 30, platformType.REGULAR);
+                createPlatform(5400, 300, 250, 30, platformType.REGULAR);
+                createPlatform(5800, 200, 100, 30, platformType.REGULAR);
+                createPlatform(6000, 300, 250, 30, platformType.END);
+                stamina = 350;
+            }
+            else if (levelNo == 2) {
+                createPlatform(50, 400, 900, 30, platformType.REGULAR);
+                createPlatform(750, 100, 600, 30, platformType.REGULAR);
+                createObtainable(1050, 131, obtainableType.CHOCOBAR);
+                createPlatform(1200, 200, 400, 30, platformType.END);
+                stamina = 350;
+            }
+            // create level three shapes
+            else if (levelNo == 3) {
+                createPlatform(50, 500, 900, 100, platformType.REGULAR);
+                createPlatform(750, 200, 600, 30, platformType.REGULAR);
+                createObtainable(1050, 181, obtainableType.CHOCOBAR);
+                createPlatform(1500, 0, 400, 200, platformType.REGULAR);
+                createPlatform(1150, 500, 400, 300, platformType.REGULAR);
+                stamina = 350;
+            }
+
+            // add shapes and obtainables to stage
+            for (x = 0; x < platforms.size; x++) stage.addChild(platforms.returnFrom(x).element);
+            for (x = 0; x < obtainables.size; x++) stage.addChild(obtainables.returnFrom(x).element);
+
+            // set UI stats, add to stage
+            healthText.text = "Health: " + health;
+            capacitorText.text = "Capacitor Charge: " + capacitor;
+            staminaText.text = "Stamina: " + stamina;
+            stage.addChild(stats);
+
+            // play background audio
+            document.getElementById('mainGame').play();
+
+            // reset character, add to stage
+            character.y = 0;
+            stage.addChild(character);
+
+            // reset main game interval
+            clearInterval(gameInterval);
+            gameInterval = setInterval(gameLoop, 1);
+        }
+
+        function gameLoop() {
+            // move background
+            backgroundBitmap.x -= 0.1;
+
+            // check for player death
+            if (character.y >= 1000 || character.y <= -200 || stamina <= 0 || health <= 0) overlay("Game Over");
+
+            // move platforms and obtainables based on object speed
+            for (var x = 0; x < platforms.size; x++) platforms.returnFrom(x).element.x -= objectSpeed;
+            for (var x = 0; x < obtainables.size; x++) obtainables.returnFrom(x).element.x -= objectSpeed;
+
+            // check for intersections for platforms and obtainables
+            checkObtainableIntersection();
+            checkPlatformIntersection();
+        }
+
+        // This function creates a platform either walkable, death, or ending and adds it to the platforms list
+        function createPlatform(xCoord, yCoord, Width, Height, type) {
+            // create shape
+            var shape = new createjs.Shape();
+            
+            // Depending on type, change graphics, add to platforms list accordingly with the type specified
+            if (type == "end") {
+                shape.graphics.beginFill("Green").drawRect(xCoord, yCoord, Width, Height);
+                platforms.add(shape, "Ending Platform", xCoord, yCoord, Width, Height);
+            }
+            else if (type == "death") {
+                shape.graphics.beginFill("Red").drawRect(xCoord, yCoord, Width, Height);
+                platforms.add(shape, "Death Platform", xCoord, yCoord, Width, Height);
+            }
+            else if (type == "regular") {
+                shape.graphics.beginFill("Black").drawRect(xCoord, yCoord, Width, Height);
+                platforms.add(shape, "Walkable Platform", xCoord, yCoord, Width, Height);
+            }
+        }
+
+        // This function creates an obtainable object either a chocolate bar, energy drink, or capacitor and adds it to the obtainables list
+        function createObtainable(xCoord, yCoord, type) {
+            // create image and bitmap, assign image to bitmap
+            var image = new Image();
+            var bitmap = new createjs.Bitmap(image);
+            bitmap.x = xCoord;
+            bitmap.y = yCoord;
+
+            // Depending on type, add to obtainables list accordingly with the type specified and src image
+            if (type == "chocobar") {
+                image.src = "Obtainable Objects/Choco_Bar-2.png";
+                obtainables.add(bitmap, "Chocolate Bar", xCoord, yCoord);
+            }
+            else if (type == "energydrink") {
+                image.src = "Obtainable Objects/Energy_Drink-2.png";
+                obtainables.add(bitmap, "Energy Drink", xCoord, yCoord);
+            }
+            else if (type == "capacitor") {
+                image.src = "Obtainable Objects/Charged_Capacitor-2.png";
+                obtainables.add(bitmap, "Capacitor", xCoord, yCoord);
+            }
+        }
+
+        // This function controls the modification of the stamina variable based on an amount sent either + or -
+        function modifyStamina(amount) {
+            // change stamina
+            stamina += amount;
+            // set text
+            staminaText.text = "Stamina: " + stamina;
+        }
+
+        // This function controls the modification of the health variable, always removes from health, never adds
+        function drainHealth(amount) {
+            // change health
+            health -= amount;
+
+            // set text
+            healthText.text = "Health: " + health;
+        }
+
+        // This function controls the modification of the capacitor charge variable, always removes from capacitor charge, never adds
+        function drainCapacitor(amount) {
+            // change capacitor charge
+            capacitor -= amount;
+
+            // set text
+            capacitorText.text = "Capacitor Charge: " + capacitor;
+
+            // once capacitor charge reaches 0, reactivate stamina, and stop the capacitor charge from draining
+            if (capacitor <= 0) {
+                staminaInterval = setInterval(modifyStamina, 200, -1);
+                clearInterval(capacitorInterval);
+                capacitor = 0;
+            }
+        }
+
+        // This function controls the gravity for the player
+        function gravity() {
+            // default gravity direction (Down)
+            var gravityYDirection = 1;
+
+            // when switched gravity is activated, swap the direction of gravity (Up)
+            if (switchedGravity == true) gravityYDirection = -1;
+
+            // Move player towards whichever direction is chosen above
+            character.y += gravityYDirection;
+
+            if (levelNo == 1 || levelNo == 2) jumping = true;
+        }
+
+        // This function controls the hitboxes around each obtainable items in the level and performs operations if a collision occurs
+        function checkObtainableIntersection() {
+            // track the head object in the obtainables list
+            for (var x = 0; x < obtainables.size; x++) {
+                var currentObject = obtainables.returnFrom(x);
+                var pt1;
+
+                // depending on what gravity is, make a correction to the variables used for hitboxes
+                if (switchedGravity == true) {
+                    pt1 = character.localToLocal(-1 * currentObject.xCoord, -1 * currentObject.yCoord, currentObject.element);
+                    pt1.x -= 15;
+                    pt1.y -= 20;
+                }
+                else pt1 = character.localToLocal(currentObject.xCoord, currentObject.yCoord, currentObject.element);
+
+                // once obtainable is off screen, remove it
+                if (currentObject.xCoord < pt1.x - 100) {
+                    stage.removeChild(currentObject.element);
+                    obtainables.removeFrom(x);
+                }
+
+                // false block
+                else if (pt1.x >= currentObject.xCoord + 25 || pt1.x + 30 <= currentObject.xCoord || pt1.y >= currentObject.yCoord + 25 || pt1.y + 40 <= currentObject.yCoord) { }
+                // otherwise, they must be inside the object, so perform one of the operations
+                else {
+                    // if what they collided with was a chocolate bar then reduce their health by 25 and remove the object from the stage and the linked list
+                    if (currentObject.type == "Chocolate Bar") {
+                        document.getElementById("chocolate").play();
+                        drainHealth(25);
+                        stage.removeChild(currentObject.element);
+                        obtainables.removeFrom(x);
+                    }
+                    // if what they collided with was an energy drink then add 50 to their stamina and remove the object from the stage and the linked list
+                    else if (currentObject.type == "Energy Drink") {
+                        modifyStamina(50);
+                        stage.removeChild(currentObject.element);
+                        obtainables.removeFrom(x);
+                    }
+                    // if what they collided with was a capacitor then stop stamina from draining, and start to drain the capacitor charge from 100 to 0
+                    else if (currentObject.type == "Capacitor") {
+                        document.getElementById("powerup").play();
+                        clearInterval(staminaInterval);
+                        capacitor = 100;
+                        capacitorInterval = setInterval(drainCapacitor, 100, 1);
+                        stage.removeChild(currentObject.element);
+                        obtainables.removeFrom(x);
+                    }
+                }
+            }
+        }
+
+        // This function checks for collisions between the player and the platforms on the level
+        function checkPlatformIntersection() {
+            // for each level object....
+            for (var x = 0; x < platforms.size; x++) {
+                // track the platform that the loop is on currently
+                var currentObject = platforms.returnFrom(x);
+
+                // create coordinate that corresponds to player relative to the platform
+                var pt1 = character.localToLocal(0, 30, currentObject.element);
+
+                // this variable is for if switchedGravity is true. It determines the y value at which the platform is
+                var platformY;
+                if (switchedGravity == true) platformY = currentObject.Height + currentObject.yCoord;
+
+                // once platform moves off screen, remove it
+                if ((currentObject.xCoord + currentObject.Width) < pt1.x - 100) {
+                    stage.removeChild(currentObject.element)
+                    platforms.removeFrom(x);
+                }
+                // Detect collision. If one occurs, check to see if it was an end or death platform and stop gravity
+                else if ((currentObject.element).hitTest(pt1.x, pt1.y) && ((pt1.y <= platformY && pt1.y >= platformY - 15 && switchedGravity == true) || (pt1.y >= currentObject.yCoord && pt1.y <= currentObject.yCoord + 15 && switchedGravity == false))) {
+                    clearInterval(gravityInterval);
+                    onPlatform = true;
+                    jumping = false;
+                    noOfJumps = 2;
+
+                    // if the current object that the player has collided with is a death platform, reset the level
+                    if (currentObject.type == "Death Platform") overlay("Game Over");
+                    // if the current object that the player has collided with is an ending platform, move to the next level
+                    else if (currentObject.type == "Ending Platform") overlay("Level Complete");
+                }
+                // when player moves past platform, add gravity back to player
+                else if (onPlatform == true) {
+                    onPlatform = false;
+                    gravityInterval = setInterval(gravity, 1);
+                }
+            }
+        }
+
+        function keyboardInput(e) {
+            var jumpHeight = -200, rotation = 180, correctionXYFactor = 30;
+
+            // Swap the values if swapped gravity is true
+            if (switchedGravity == true) {
+                jumpHeight = 200;
+                rotation = -180;
+                correctionXYFactor = -30;
+            }
+
+            // jump player
+            if (e.keyCode == "32" && jumping == false) {
+                document.getElementById('jump').play();
+                if (capacitor <= 0) modifyStamina(-20);
+                if (noOfJumps >= 0) {
+                    jumping = true;
+                    createjs.Tween.get(character, { loop: false }).to({ y: character.y + jumpHeight }, 800, createjs.Ease.getPowInOut(3));
+                }
+                else noOfJumps--;
+            }
+            // change platform speed
+            else if (e.keyCode == "17") {
+                if (objectSpeed >= 2.5) objectSpeed = 1;
+                else objectSpeed += 0.5;
+            }
+            // swap gravity
+            else if (e.keyCode == "16" && (levelNo == 2 || levelNo == 3) && jumping == false) {
+                document.getElementById("antigravity").play();
+                document.getElementById("antigravity").currentTime = 0;
+                if (capacitor <= 0) modifyStamina(-20);
+                jumping = true;
+                character.rotation += rotation;
+                character.x += correctionXYFactor;
+                character.y += correctionXYFactor;
+                switchedGravity = !switchedGravity;
+            }
+        }
+    </script>
+</head>
+<body onload="init();">
+    <audio id="jump" preload="auto" type="audio/wav" src="Sounds/Jump_01.wav"></audio>
+    <audio id="chocolate" preload="auto" type="audio/wav" src="Sounds/Error.wav"></audio>
+    <audio id="powerup" preload="auto" type="audio/wav" src="Sounds/Powerup.wav"></audio>
+    <audio id="antigravity" preload="auto" type="audio/wav" src="Sounds/Swoosh.wav"></audio>
+    <audio id="mainGame" preload="auto" type="audio/mp3" src="Sounds/Weight-Runner_Main.mp3"></audio>
+    <audio id="mainMenu" preload="auto" type="audio/mp3" src="Sounds/Weight-Runner_Menu.mp3"></audio>
+    <audio id="death" preload="auto" type="audio/mp3" src="Sounds/Weight-Runner_Death.mp3"></audio>
+    <audio id="win" preload="auto" type="audio/mp3" src="Sounds/Weight-Runner_Complete.mp3"></audio>
+    <canvas id="demoCanvas"></canvas>
+</body>
+</html>
